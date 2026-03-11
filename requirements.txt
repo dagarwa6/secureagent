@@ -1,0 +1,46 @@
+# ============================================================
+# SecureAgent — Requirements (All Free, No Paid APIs Required)
+# ============================================================
+
+# Core agent framework
+langgraph>=0.2.0
+langchain>=0.3.0
+langchain-core>=0.3.0
+langchain-groq>=0.2.0           # Groq API (free tier) — primary LLM
+langchain-google-genai>=2.0.0   # Google Gemini (free tier) — fallback LLM
+langchain-community>=0.3.0
+
+# Document ingestion
+llama-index>=0.11.0
+llama-index-core>=0.11.0
+llama-index-embeddings-huggingface>=0.3.0   # FREE local embeddings (sentence-transformers)
+llama-index-vector-stores-chroma>=0.2.0     # ChromaDB vector store (free, local)
+llama-index-readers-file>=0.2.0
+
+# Vector store & embeddings
+chromadb>=0.5.0
+sentence-transformers>=3.0.0    # Local embedding models — no API calls, no cost
+
+# Document parsing
+pymupdf>=1.24.0                 # PDF parsing
+python-docx>=1.1.0              # DOCX reading and writing
+
+# Report generation
+jinja2>=3.1.0
+
+# Frontend / Demo
+streamlit>=1.40.0
+
+# Data modeling & validation
+pydantic>=2.0.0
+
+# Risk quantification
+numpy>=1.24.0                   # Monte Carlo simulation for FAIR analysis
+
+# Utilities
+python-dotenv>=1.0.0
+requests>=2.31.0
+
+# Testing
+pytest>=8.0.0
+pytest-asyncio>=0.23.0
