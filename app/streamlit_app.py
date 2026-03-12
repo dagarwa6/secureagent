@@ -28,10 +28,32 @@ sys.path.insert(0, str(project_root))
 
 logger = logging.getLogger(__name__)
 
-# ── Load API key from environment / .env file ────────────────────────────────
-# Never hardcode API keys — load from .env or environment variable
+# ── Load API key from environment / .env file / Streamlit secrets ─────────────
+# Priority: Streamlit secrets → .env file → environment variable
 from dotenv import load_dotenv
 load_dotenv(dotenv_path=project_root / ".env")
+
+# Streamlit Cloud: inject secrets into os.environ so config/settings.py picks them up
+try:
+    if "GEMINI_API_KEY" in st.secrets and not os.environ.get("GEMINI_API_KEY"):
+        os.environ["GEMINI_API_KEY"] = st.secrets["GEMINI_API_KEY"]
+    if "GROQ_API_KEY" in st.secrets and not os.environ.get("GROQ_API_KEY"):
+        os.environ["GROQ_API_KEY"] = st.secrets["GROQ_API_KEY"]
+except FileNotFoundError:
+    pass  # No secrets file — running locally with .env
+
+# ── Auto-download framework data if missing (needed for Streamlit Cloud) ─────
+_mitre_path = project_root / "data" / "frameworks" / "mitre_attack_enterprise.json"
+if not _mitre_path.exists():
+    import urllib.request
+    _mitre_path.parent.mkdir(parents=True, exist_ok=True)
+    _mitre_url = "https://raw.githubusercontent.com/mitre/cti/master/enterprise-attack/enterprise-attack.json"
+    try:
+        req = urllib.request.Request(_mitre_url, headers={"User-Agent": "SecureAgent/1.0"})
+        with urllib.request.urlopen(req, timeout=120) as resp:
+            _mitre_path.write_bytes(resp.read())
+    except Exception:
+        pass  # Agents will use LLM knowledge if MITRE data unavailable
 
 # ── Page Config ───────────────────────────────────────────────────────────────
 
