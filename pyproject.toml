@@ -1,0 +1,9 @@
+[tool.flake8]
+max-line-length = 150
+exclude = ["data", "output", ".venv", "__pycache__", "*.egg-info"]
+ignore = ["E501", "W503", "E303"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+addopts = "-v --tb=short"

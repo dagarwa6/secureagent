@@ -8,19 +8,19 @@ Synthesizes all prior agent outputs into:
   5. Board-ready DOCX report (via report/generator.py)
 """
 
-import json
 import logging
 from langchain_core.messages import HumanMessage
 
-from config.settings import get_llm
+from config.settings import get_llm, ORG_NAME
 from agents.state import AgentState
 
 logger = logging.getLogger(__name__)
 
 # ── Pre-defined Architecture Recommendations ───────────────────────────────────
 
-TARGET_ARCHITECTURE = """
-## Recommended Target-State Security Architecture for MedBridge Health Systems
+# Fallback data specific to MedBridge demo corpus
+TARGET_ARCHITECTURE = f"""
+## Recommended Target-State Security Architecture for {ORG_NAME}
 
 ### 1. Zero Trust Network Architecture
 **Current State:** Flat network with unenforced VLAN ACLs; clinical workstations have direct access to Epic servers.
@@ -73,6 +73,7 @@ TARGET_ARCHITECTURE = """
 
 # ── Pre-defined Roadmap ───────────────────────────────────────────────────────
 
+# Fallback data specific to MedBridge demo corpus
 IMPLEMENTATION_ROADMAP = [
     {
         "phase": "Phase 1: Quick Wins & Foundations",
@@ -120,6 +121,7 @@ IMPLEMENTATION_ROADMAP = [
 
 # ── RACI Matrix ───────────────────────────────────────────────────────────────
 
+# Fallback data specific to MedBridge demo corpus
 RACI_MATRIX = [
     {"security_function": "Cybersecurity Strategy & Budget", "responsible": "CISO", "accountable": "COO", "consulted": "CFO, CCO", "informed": "Board, CEO"},
     {"security_function": "Risk Management Program", "responsible": "CISO", "accountable": "COO", "consulted": "CCO, IT Director", "informed": "Board"},
@@ -136,7 +138,7 @@ RACI_MATRIX = [
 
 # ── Prompts ───────────────────────────────────────────────────────────────────
 
-EXEC_SUMMARY_PROMPT = """You are a senior cybersecurity consultant writing an executive summary for MedBridge Health Systems' board of directors.
+EXEC_SUMMARY_PROMPT = """You are a senior cybersecurity consultant writing an executive summary for {org_name}'s board of directors.
 
 Assessment findings:
 - Overall NIST CSF 2.0 maturity score: {overall_score}/5.0 (healthcare industry benchmark: 2.1)
@@ -205,6 +207,7 @@ def run_report_node(state: AgentState) -> AgentState:
         ]) or "Ransomware: $1.07M/yr ALE"
 
         exec_summary_response = llm.invoke([HumanMessage(content=EXEC_SUMMARY_PROMPT.format(
+            org_name=ORG_NAME,
             overall_score=f"{overall_score:.1f}",
             function_scores=function_scores_str,
             risk_count=len(risk_findings),

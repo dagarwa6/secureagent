@@ -3,7 +3,7 @@ LangGraph Agent State Schema
 Defines the shared state TypedDict that flows through all 5 agents in the pipeline.
 """
 
-from typing import Optional, Any
+from typing import Optional
 from typing_extensions import TypedDict
 
 

@@ -10,18 +10,17 @@ Parses MedBridge corpus documents and extracts structured security-relevant info
 
 import json
 import logging
-from typing import Optional
 
 from langchain_core.messages import HumanMessage
 
-from config.settings import get_llm, get_embed_model, CORPUS_PATH, CHROMA_DB_PATH
+from config.settings import get_llm, CHROMA_DB_PATH, ORG_NAME
 from agents.state import AgentState
 
 logger = logging.getLogger(__name__)
 
 # ── Extraction Prompts ────────────────────────────────────────────────────────
 
-ASSET_EXTRACTION_PROMPT = """You are a cybersecurity analyst reviewing organizational documents for MedBridge Health Systems.
+ASSET_EXTRACTION_PROMPT = """You are a cybersecurity analyst reviewing organizational documents for {org_name}.
 
 Based on the following document excerpts, extract a comprehensive asset inventory.
 
@@ -43,7 +42,7 @@ JSON array:"""
 
 POLICY_EXTRACTION_PROMPT = """You are a cybersecurity compliance analyst.
 
-Based on the following document excerpts about MedBridge Health Systems, extract all security policy information.
+Based on the following document excerpts about {org_name}, extract all security policy information.
 
 For each policy, provide:
 - name: Policy name
@@ -62,12 +61,12 @@ JSON array:"""
 
 VENDOR_EXTRACTION_PROMPT = """You are a third-party risk analyst.
 
-Based on the following document excerpts about MedBridge Health Systems, extract all vendor/third-party relationship information.
+Based on the following document excerpts about {org_name}, extract all vendor/third-party relationship information.
 
 For each vendor, provide:
 - vendor_name: Name of the vendor
 - service: What service they provide
-- connection_type: How they connect to MedBridge systems
+- connection_type: How they connect to {org_name} systems
 - data_access: What data they can access (include if PHI)
 - phi_access: true/false
 - mfa_required: true/false
@@ -84,7 +83,7 @@ JSON array:"""
 
 SUMMARY_PROMPT = """You are a senior cybersecurity consultant preparing an executive brief.
 
-Based on the following documents about MedBridge Health Systems, write a concise organizational security context summary (2-3 paragraphs) covering:
+Based on the following documents about {org_name}, write a concise organizational security context summary (2-3 paragraphs) covering:
 1. Organization type, size, and regulatory environment
 2. Current IT/security posture (high-level strengths and critical weaknesses)
 3. Primary business objectives at risk from a cybersecurity perspective
@@ -115,7 +114,7 @@ def run_ingestion_node(state: AgentState) -> AgentState:
         asset_context = str(query_engine.query(
             "List all servers, workstations, network devices, applications, medical devices, and cloud resources"
         ))
-        state["asset_inventory"] = _extract_json(llm, ASSET_EXTRACTION_PROMPT.format(context=asset_context))
+        state["asset_inventory"] = _extract_json(llm, ASSET_EXTRACTION_PROMPT.format(context=asset_context, org_name=ORG_NAME))
 
         # Extract policies
         logger.info("Extracting policy inventory...")
@@ -123,12 +122,12 @@ def run_ingestion_node(state: AgentState) -> AgentState:
         policy_context = str(query_engine.query(
             "List all security policies, their status, last review dates, and any compliance gaps"
         ))
-        state["policy_refs"] = _extract_json(llm, POLICY_EXTRACTION_PROMPT.format(context=policy_context))
+        state["policy_refs"] = _extract_json(llm, POLICY_EXTRACTION_PROMPT.format(context=policy_context, org_name=ORG_NAME))
 
         # Extract tech refs
         logger.info("Extracting technology references...")
         tech_context = str(query_engine.query(
-            "What technologies, software, and security tools does MedBridge use?"
+            f"What technologies, software, and security tools does {ORG_NAME} use?"
         ))
         state["tech_refs"] = _extract_tech_list(llm, tech_context)
 
@@ -138,15 +137,15 @@ def run_ingestion_node(state: AgentState) -> AgentState:
         vendor_context = str(query_engine.query(
             "Describe all third-party vendor connections, their data access, security assessments, and risks"
         ))
-        state["vendor_risks"] = _extract_json(llm, VENDOR_EXTRACTION_PROMPT.format(context=vendor_context))
+        state["vendor_risks"] = _extract_json(llm, VENDOR_EXTRACTION_PROMPT.format(context=vendor_context, org_name=ORG_NAME))
 
         # Generate executive summary
         logger.info("Generating organizational summary...")
         state["progress_messages"].append("Ingestion Agent: Generating organizational summary...")
         all_context = str(query_engine.query(
-            "Provide a comprehensive overview of MedBridge Health Systems' organization, IT environment, and security posture"
+            f"Provide a comprehensive overview of {ORG_NAME}'s organization, IT environment, and security posture"
         ))
-        summary_response = llm.invoke([HumanMessage(content=SUMMARY_PROMPT.format(context=all_context))])
+        summary_response = llm.invoke([HumanMessage(content=SUMMARY_PROMPT.format(context=all_context, org_name=ORG_NAME))])
         state["ingestion_summary"] = summary_response.content
 
         # Track data provenance
@@ -210,7 +209,7 @@ def _extract_json(llm, prompt: str) -> list[dict]:
 
 def _extract_tech_list(llm, context: str) -> list[str]:
     """Extract a flat list of technology names from the context."""
-    prompt = f"""From this text about MedBridge Health Systems, extract a list of all technology product names, software, and tools mentioned.
+    prompt = f"""From this text about {ORG_NAME}, extract a list of all technology product names, software, and tools mentioned.
 
 Text:
 {context}

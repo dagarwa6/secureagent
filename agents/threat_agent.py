@@ -1,6 +1,6 @@
 """
 Agent 2: Threat Modeling Agent
-Performs STRIDE threat analysis and MITRE ATT&CK technique mapping for MedBridge Health Systems.
+Performs STRIDE threat analysis and MITRE ATT&CK technique mapping for the target organization.
 
 Outputs:
   - STRIDE threats per asset/category
@@ -13,13 +13,14 @@ import json
 import logging
 from langchain_core.messages import HumanMessage
 
-from config.settings import get_llm, CHROMA_DB_PATH, MITRE_ATTACK_PATH
+from config.settings import get_llm, CHROMA_DB_PATH, MITRE_ATTACK_PATH, ORG_NAME
 from agents.state import AgentState
 
 logger = logging.getLogger(__name__)
 
 # ── Kill Chain Definition (Pre-defined for MedBridge ransomware scenario) ─────
 
+# Fallback data specific to MedBridge demo corpus
 MEDBRIDGE_KILL_CHAIN = [
     {
         "stage": "1. Reconnaissance",
@@ -82,7 +83,7 @@ MEDBRIDGE_KILL_CHAIN = [
 
 # ── STRIDE Prompt ──────────────────────────────────────────────────────────────
 
-STRIDE_PROMPT = """You are a senior cybersecurity architect performing a STRIDE threat model for MedBridge Health Systems.
+STRIDE_PROMPT = """You are a senior cybersecurity architect performing a STRIDE threat model for {org_name}.
 
 Organization context:
 {org_context}
@@ -122,9 +123,9 @@ Return a JSON array:"""
 
 MITRE_MAPPING_PROMPT = """You are a threat intelligence analyst specializing in healthcare cybersecurity.
 
-Based on MedBridge Health Systems' environment and known healthcare threat actors (FIN12, Conti affiliates, healthcare-targeted ransomware groups), identify the most relevant MITRE ATT&CK techniques.
+Based on {org_name}'s environment and known healthcare threat actors (FIN12, Conti affiliates, healthcare-targeted ransomware groups), identify the most relevant MITRE ATT&CK techniques.
 
-MedBridge environment summary:
+{org_name} environment summary:
 {context}
 
 Known healthcare threat context:
@@ -138,8 +139,8 @@ For each technique, provide:
 - technique_id: MITRE ATT&CK ID (e.g., "T1566.001")
 - technique_name: Technique name
 - tactic: MITRE tactic (e.g., "Initial Access", "Credential Access")
-- healthcare_relevance: Why this technique is particularly relevant to MedBridge/healthcare
-- medbridge_specific_risk: Specific vulnerability or condition at MedBridge that enables this technique
+- healthcare_relevance: Why this technique is particularly relevant to {org_name}/healthcare
+- org_specific_risk: Specific vulnerability or condition at {org_name} that enables this technique
 - priority: "Critical" | "High" | "Medium"
 
 Identify 15–20 techniques most relevant to healthcare ransomware scenarios.
@@ -158,13 +159,14 @@ def run_threat_node(state: AgentState) -> AgentState:
         llm = get_llm()
 
         # Build context from ingestion output
-        org_context = state.get("ingestion_summary", "MedBridge Health Systems — healthcare org, hybrid Azure + on-prem, Epic EHR")
+        org_context = state.get("ingestion_summary", f"{ORG_NAME} — healthcare org, hybrid Azure + on-prem, Epic EHR")
         asset_list = state.get("asset_inventory", [])
         asset_context = json.dumps(asset_list[:20], indent=2) if asset_list else "See asset inventory"
 
         # Run STRIDE analysis
         logger.info("Running STRIDE threat analysis...")
         stride_response = llm.invoke([HumanMessage(content=STRIDE_PROMPT.format(
+            org_name=ORG_NAME,
             org_context=org_context,
             asset_context=asset_context
         ))])
@@ -176,6 +178,7 @@ def run_threat_node(state: AgentState) -> AgentState:
         mitre_context = _get_mitre_context(state)
         logger.info("Mapping MITRE ATT&CK techniques...")
         mitre_response = llm.invoke([HumanMessage(content=MITRE_MAPPING_PROMPT.format(
+            org_name=ORG_NAME,
             context=org_context + "\n\n" + mitre_context
         ))])
         state["mitre_techniques"] = _parse_json(mitre_response.content, "MITRE techniques")

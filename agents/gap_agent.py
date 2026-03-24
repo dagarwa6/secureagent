@@ -12,7 +12,7 @@ import json
 import logging
 from langchain_core.messages import HumanMessage
 
-from config.settings import get_llm
+from config.settings import get_llm, ORG_NAME
 from agents.state import AgentState
 from tools.fair_calculator import get_medbridge_fair_results, fair_results_to_dict
 
@@ -21,7 +21,7 @@ logger = logging.getLogger(__name__)
 # ── Healthcare Industry Benchmark ─────────────────────────────────────────────
 HEALTHCARE_BENCHMARK = 2.1  # CISA 2024 healthcare sector average
 
-RISK_REGISTER_PROMPT = """You are a senior cybersecurity risk analyst completing a risk register for MedBridge Health Systems.
+RISK_REGISTER_PROMPT = """You are a senior cybersecurity risk analyst completing a risk register for {org_name}.
 
 Organization summary:
 {org_context}
@@ -67,7 +67,7 @@ For each finding, provide:
 Ensure findings cover:
 - At least 3 findings per NIST function
 - Both Systemic (governance/cross-domain) and Isolated (tactical) gaps
-- Findings linked to specific MedBridge assets and incidents
+- Findings linked to specific {org_name} assets and incidents
 
 Return a JSON array of risk findings, sorted by risk_score descending:"""
 
@@ -83,13 +83,14 @@ def run_gap_node(state: AgentState) -> AgentState:
         llm = get_llm()
 
         # Build context
-        org_context = state.get("ingestion_summary", "MedBridge Health Systems healthcare org")
+        org_context = state.get("ingestion_summary", f"{ORG_NAME} healthcare org")
         nist_scores = _format_nist_scores(state.get("nist_scores", []))
         threats_context = _format_threats(state)
 
         # Generate risk register
         logger.info("Generating risk register with LLM...")
         response = llm.invoke([HumanMessage(content=RISK_REGISTER_PROMPT.format(
+            org_name=ORG_NAME,
             org_context=org_context,
             nist_scores=nist_scores,
             threats_context=threats_context,
@@ -241,6 +242,7 @@ def _merge_with_fallback(existing: list) -> list:
     return existing
 
 
+# Fallback data specific to MedBridge demo corpus
 def _get_fallback_findings() -> list[dict]:
     """Pre-defined risk findings for MedBridge based on known gaps."""
     return [

@@ -282,14 +282,14 @@ RUBRIC_CHECKLIST = {
 
 def print_qa_checklist():
     """Print the QA checklist to console for manual review."""
-    print("\n" + "="*60)
+    print("\n" + "=" * 60)
     print("  SecureAgent — QA Rubric Checklist")
-    print("="*60)
+    print("=" * 60)
     for sprint, items in RUBRIC_CHECKLIST.items():
         print(f"\n{sprint}")
         for item in items:
             print(f"  ☐ {item}")
-    print("\n" + "="*60 + "\n")
+    print("\n" + "=" * 60 + "\n")
 
 
 if __name__ == "__main__":

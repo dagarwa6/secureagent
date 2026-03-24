@@ -10,6 +10,7 @@ Run once before first pipeline execution:
 import os
 import sys
 import json
+import hashlib
 import urllib.request
 
 # Add project root to path
@@ -26,8 +27,33 @@ NIST_CSF_URL_ALT = "https://csrc.nist.gov/extensions/nudp/services/json/csf/down
 MITRE_URL = "https://raw.githubusercontent.com/mitre/cti/master/enterprise-attack/enterprise-attack.json"
 
 
+# Known SHA256 hashes for integrity verification (updated when downloading new versions)
+EXPECTED_HASHES = {
+    "mitre_attack_enterprise.json": "628c4fc3c01b9ef37e1cd84ca3c421e1d43950a43464a14aabd1a7089601dc45",
+}
+
+
+def _verify_hash(data: bytes, filename: str) -> bool:
+    """Verify SHA256 hash of downloaded data against known good hash."""
+    actual_hash = hashlib.sha256(data).hexdigest()
+    expected = EXPECTED_HASHES.get(filename)
+    if expected is None:
+        print(f"  ℹ️  No known hash for {filename} — skipping integrity check")
+        return True
+    if actual_hash == expected:
+        print(f"  ✅ SHA256 verified: {actual_hash[:16]}...")
+        return True
+    else:
+        print(f"  ⚠️  SHA256 MISMATCH for {filename}!")
+        print(f"      Expected: {expected}")
+        print(f"      Actual:   {actual_hash}")
+        print(f"      File may be corrupted, tampered, or updated upstream.")
+        print(f"      Keeping file but flagging for manual review.")
+        return False
+
+
 def download_file(url: str, dest_path: str, label: str) -> bool:
-    """Download a file from URL to dest_path."""
+    """Download a file from URL to dest_path with optional SHA256 verification."""
     print(f"Downloading {label}...")
     print(f"  URL: {url}")
     print(f"  Destination: {dest_path}")
@@ -35,6 +61,9 @@ def download_file(url: str, dest_path: str, label: str) -> bool:
         req = urllib.request.Request(url, headers={"User-Agent": "SecureAgent/1.0"})
         with urllib.request.urlopen(req, timeout=60) as response:
             data = response.read()
+        # Verify integrity before writing
+        filename = os.path.basename(dest_path)
+        _verify_hash(data, filename)
         with open(dest_path, "wb") as f:
             f.write(data)
         size_kb = os.path.getsize(dest_path) / 1024

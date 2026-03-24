@@ -16,7 +16,7 @@ import json
 import logging
 from langchain_core.messages import HumanMessage
 
-from config.settings import get_llm, CHROMA_DB_PATH, NIST_CSF_PATH
+from config.settings import get_llm, CHROMA_DB_PATH, NIST_CSF_PATH, ORG_NAME
 from agents.state import AgentState
 
 logger = logging.getLogger(__name__)
@@ -36,7 +36,7 @@ HEALTHCARE_BENCHMARK = 2.1
 
 # ── Per-Function Assessment Prompts ───────────────────────────────────────────
 
-FUNCTION_ASSESSMENT_PROMPT = """You are a senior cybersecurity consultant performing a NIST CSF 2.0 maturity assessment for MedBridge Health Systems.
+FUNCTION_ASSESSMENT_PROMPT = """You are a senior cybersecurity consultant performing a NIST CSF 2.0 maturity assessment for {org_name}.
 
 Function being assessed: {function_name} ({function_id})
 Function description: {function_desc}
@@ -132,6 +132,7 @@ def run_assessment_node(state: AgentState) -> AgentState:
 
             # Score the function
             prompt = FUNCTION_ASSESSMENT_PROMPT.format(
+                org_name=ORG_NAME,
                 function_name=func["name"],
                 function_id=func["id"],
                 function_desc=func["desc"],
@@ -142,6 +143,10 @@ def run_assessment_node(state: AgentState) -> AgentState:
             score_data = _parse_score(response.content, func["id"])
             score_data["function"] = func["name"]
             score_data["function_id"] = func["id"]
+
+            # Validate: flag suspiciously high scores for functions with known absent controls
+            _validate_score_conservatism(score_data, org_context)
+
             function_scores.append(score_data)
 
         state["nist_scores"] = function_scores
@@ -168,7 +173,7 @@ def run_assessment_node(state: AgentState) -> AgentState:
         state["errors"] = state.get("errors", []) + [f"Assessment Agent: {str(e)}"]
         # Fallback scores based on known MedBridge issues
         state["nist_scores"] = state.get("nist_scores") or _get_fallback_scores()
-        state["overall_maturity_score"] = state.get("overall_maturity_score") or 1.33
+        state["overall_maturity_score"] = state.get("overall_maturity_score") or 1.25
         state["industry_benchmark"] = HEALTHCARE_BENCHMARK
         # Track fallback usage
         fallback_flags = state.get("fallback_flags") or {}
@@ -206,18 +211,6 @@ def _build_org_context(state: AgentState) -> str:
 
 def _get_evidence(state: AgentState, function_name: str, nist_query_engine) -> str:
     """Get relevant evidence from corpus for the given function."""
-    # Evidence map: function → relevant search terms for corpus
-    evidence_queries = {
-        "Govern": "security governance CISO security policy organizational structure security strategy budget",
-        "Identify": "asset inventory risk assessment vulnerability management third-party vendor risk",
-        "Protect": "access control MFA authentication patch management endpoint protection encryption training",
-        "Detect": "SIEM monitoring logging incident detection security events alerts",
-        "Respond": "incident response plan IRP incident handling breach notification playbook",
-        "Recover": "business continuity plan BCP disaster recovery backup restore testing RTO RPO",
-    }
-
-    query = evidence_queries.get(function_name, function_name)
-
     # Use corpus ingestion data already in state as primary evidence
     relevant_evidence = []
 
@@ -273,6 +266,27 @@ def _parse_score(content: str, func_id: str) -> dict:
     return {"score": 2.0, "maturity_level": "Developing", "score_justification": "Score estimated from known gaps", "key_gaps": [], "key_strengths": []}
 
 
+def _validate_score_conservatism(score_data: dict, org_context: str) -> None:
+    """Warn if LLM returned a score that contradicts known absent controls."""
+    func_id = score_data.get("function_id", "")
+    score = score_data.get("score", 0)
+    context_lower = org_context.lower()
+
+    checks = {
+        "DE": ("no siem", 2.0, "no SIEM deployed"),
+        "PR": ("no edr", 2.5, "no EDR deployed"),
+        "GV": ("no ciso", 2.0, "no CISO role"),
+        "RC": ("untested", 2.0, "BCP untested"),
+    }
+    if func_id in checks:
+        keyword, threshold, reason = checks[func_id]
+        if keyword in context_lower and score > threshold:
+            logger.warning(
+                f"Score validation: {func_id} scored {score} but corpus indicates {reason}. "
+                f"Threshold for this condition is {threshold}. Score may be inflated."
+            )
+
+
 def _get_fallback_scores() -> list[dict]:
     """Fallback scores based on known MedBridge issues if LLM fails.
 
@@ -284,7 +298,7 @@ def _get_fallback_scores() -> list[dict]:
     return [
         {"function": "Govern", "function_id": "GV", "score": 1.0, "maturity_level": "Initial", "score_justification": "No CISO or dedicated security leadership exists. Security budget is not separately tracked. No security steering committee or board-level reporting. HIPAA Security Officer role is held by the CCO as a secondary duty with no security expertise. This represents essentially non-existent cybersecurity governance.", "key_gaps": ["No CISO role — security decisions are ad-hoc", "No security strategy or multi-year roadmap", "No security steering committee", "No dedicated security budget line item", "No board-level security reporting"], "key_strengths": ["HIPAA compliance team exists (CCO-led)", "Some governance awareness at COO level"]},
         {"function": "Identify", "function_id": "ID", "score": 1.5, "maturity_level": "Initial", "score_justification": "Asset inventory maintained informally via spreadsheet with no automated discovery. HIPAA risk analysis overdue since 2022. No formal vulnerability management program until Tenable acquired in 2024 (coverage still incomplete). No third-party risk assessment process.", "key_gaps": ["No formal asset management tool — spreadsheet-only", "HIPAA risk analysis overdue (last: 2022)", "No vendor/third-party risk program", "Tenable scanner acquired 2024 but coverage incomplete", "No formal risk assessment process"], "key_strengths": ["Technology inventory partially documented", "Tenable scanner recently acquired"]},
-        {"function": "Protect", "function_id": "PR", "score": 2.0, "maturity_level": "Developing", "score_justification": "Basic protective controls exist (SCCM, Windows Defender AV, Azure AD) but with critical gaps: MFA at only 35% (clinical staff 12%), no EDR, no PAM tool, 14 domain admins use DA accounts for daily work, 127 unmanaged service accounts, VLAN ACLs unenforced between clinical and server segments, and 8 of 22 policies missing.", "key_gaps": ["MFA at 35% coverage (clinical staff only 12%)", "No EDR — Windows Defender AV only", "No PAM tool; 14 DA accounts used daily", "127 unmanaged service accounts", "VLAN ACLs unenforced; flat network access"], "key_strengths": ["SCCM endpoint management deployed", "Windows Defender AV on endpoints", "Azure AD / Entra ID exists"]},
+        {"function": "Protect", "function_id": "PR", "score": 1.5, "maturity_level": "Initial", "score_justification": "While basic tools exist (SCCM, Windows Defender AV, Azure AD), the breadth and severity of control gaps prevent a 'Developing' rating. MFA covers only 35% of users (clinical staff 12%), there is no EDR, no PAM tool, 14 domain admins use DA accounts for daily work, 127 unmanaged service accounts exist, VLAN ACLs are unenforced between clinical and server segments, and 8 of 22 security policies are missing entirely. A score of 2.0 requires evidence of at least partially implemented documented processes, which is not met here.", "key_gaps": ["MFA at 35% coverage (clinical staff only 12%)", "No EDR — Windows Defender AV only", "No PAM tool; 14 DA accounts used daily", "127 unmanaged service accounts", "VLAN ACLs unenforced; flat network access"], "key_strengths": ["SCCM endpoint management deployed", "Windows Defender AV on endpoints", "Azure AD / Entra ID exists"]},
         {"function": "Detect", "function_id": "DE", "score": 1.0, "maturity_level": "Initial", "score_justification": "MedBridge has effectively zero detection capability. No SIEM is deployed. No behavioral EDR or NDR exists. Windows Event Logs are not centrally aggregated. Epic EHR access logs are not monitored. DNS query logging is disabled. No 24/7 SOC or monitoring exists. Mean time to detect in prior incidents ranged from 6+ hours (INC-2023-001) to 11 days (INC-2024-001).", "key_gaps": ["No SIEM deployed", "No behavioral EDR or NDR", "No centralized log aggregation", "No UEBA for insider threat detection", "No 24/7 security monitoring; MTTD: 6hrs–11 days"], "key_strengths": ["Firewall logs collected (30-day retention only)", "Azure Monitor exists but unused for security"]},
         {"function": "Respond", "function_id": "RS", "score": 1.5, "maturity_level": "Initial", "score_justification": "An Incident Response Plan exists but was last updated in December 2021. No ransomware, insider threat, or cloud security playbooks exist. No formal Incident Response Team is defined. No forensic capability exists in-house. INC-2024-001 had a 72-hour attacker dwell time before detection. No executive escalation path is documented.", "key_gaps": ["IRP outdated (December 2021)", "No ransomware or insider threat playbooks", "No formal IRT defined", "No forensic investigation capability", "No executive escalation path documented"], "key_strengths": ["IRP exists as a foundational document", "IT Director provides ad-hoc incident response"]},
         {"function": "Recover", "function_id": "RC", "score": 1.0, "maturity_level": "Initial", "score_justification": "BCP was last updated in June 2020 and has never been tested. Epic EHR backup recovery has never been validated. No RTO or RPO targets are defined. No standalone Disaster Recovery Plan exists. No DR tabletop exercises have been conducted. Azure Backup vault is configured but recovery procedures are untested.", "key_gaps": ["BCP untested since June 2020", "Epic backup recovery never validated", "No defined RTO/RPO targets", "No standalone DRP document", "No DR tabletop exercises conducted"], "key_strengths": ["Veeam backup tool deployed for on-premises", "Azure Backup vault configured for cloud"]},

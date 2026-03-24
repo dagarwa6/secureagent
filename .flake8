@@ -1,0 +1,4 @@
+[flake8]
+max-line-length = 150
+exclude = data,output,.venv,__pycache__,*.egg-info
+ignore = E501,W503,E303,E402

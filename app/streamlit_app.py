@@ -188,10 +188,15 @@ if run_button:
     if use_corpus:
         docs_path = str(project_root / "corpus")
     elif uploaded_files:
-        # Save uploaded files to temp directory
+        # Save uploaded files to temp directory with restricted permissions
         tmp_dir = tempfile.mkdtemp()
+        os.chmod(tmp_dir, 0o700)
         for file in uploaded_files:
-            dest = os.path.join(tmp_dir, file.name)
+            # Sanitize filename to prevent path traversal via malicious filenames
+            safe_name = os.path.basename(file.name)
+            if not safe_name:
+                safe_name = "uploaded_file"
+            dest = os.path.join(tmp_dir, safe_name)
             with open(dest, "wb") as f:
                 f.write(file.getbuffer())
         docs_path = tmp_dir
@@ -251,7 +256,10 @@ if run_button:
 
         # Clean up temp dir if used
         if not use_corpus and uploaded_files:
-            shutil.rmtree(tmp_dir, ignore_errors=True)
+            try:
+                shutil.rmtree(tmp_dir)
+            except OSError as cleanup_err:
+                logger.warning(f"Failed to clean up temp directory {tmp_dir}: {cleanup_err}")
 
     except Exception as e:
         st.error(f"❌ Pipeline error: {str(e)}")
@@ -271,6 +279,37 @@ if "pipeline_state" in st.session_state and st.session_state.pipeline_state:
         with st.expander(f"⚠️ {len(errors)} Warning(s)", expanded=False):
             for err in errors:
                 st.warning(err)
+
+    # ── Data Provenance ──────────────────────────────────────────────────────
+    fallback_flags = state.get("fallback_flags") or {}
+    _any_fallback = any(v == "fallback_static" for v in fallback_flags.values())
+    if _any_fallback:
+        st.warning(
+            "**Data Provenance Notice:** One or more agents used pre-built fallback data "
+            "instead of LLM-generated analysis. See details below."
+        )
+    with st.expander("🔍 Data Provenance — LLM vs Fallback", expanded=_any_fallback):
+        if fallback_flags:
+            import pandas as pd
+            _agent_labels = {
+                "ingestion": "Ingestion Agent",
+                "threat_modeling": "Threat Modeling Agent",
+                "assessment": "Assessment Agent",
+                "gap_analysis": "Gap Analysis Agent",
+                "report_generation": "Report Generation Agent",
+            }
+            prov_df = pd.DataFrame([{
+                "Agent": _agent_labels.get(k, k),
+                "Data Source": "LLM Generated" if v == "llm_generated" else "Fallback (Static)",
+            } for k, v in fallback_flags.items()])
+            st.dataframe(prov_df, use_container_width=True, hide_index=True)
+            st.caption(
+                "**LLM Generated** = AI analyzed your documents in real-time. "
+                "**Fallback (Static)** = Pre-built data used due to LLM error; "
+                "results reflect the MedBridge demo corpus, not a live analysis."
+            )
+        else:
+            st.info("No provenance data available for this run.")
 
     # ── Summary Tab ──────────────────────────────────────────────────────────
 

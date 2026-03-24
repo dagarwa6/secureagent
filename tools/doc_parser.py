@@ -15,9 +15,41 @@ Free stack:
 import os
 import json
 import logging
+import tempfile
 from pathlib import Path
 
 logger = logging.getLogger(__name__)
+
+# Project root for path validation
+_PROJECT_ROOT = Path(__file__).parent.parent.resolve()
+
+
+def validate_corpus_path(corpus_path: str) -> str:
+    """
+    Validate and sanitize corpus_path to prevent path traversal attacks.
+    Accepts paths within the project root or system temp directories.
+    Raises ValueError if the path is outside allowed directories.
+    """
+    resolved = Path(corpus_path).resolve()
+
+    # Allow paths within project root
+    try:
+        resolved.relative_to(_PROJECT_ROOT)
+        return str(resolved)
+    except ValueError:
+        pass
+
+    # Allow paths within system temp directory
+    try:
+        resolved.relative_to(Path(tempfile.gettempdir()).resolve())
+        return str(resolved)
+    except ValueError:
+        pass
+
+    raise ValueError(
+        f"Path traversal blocked: '{corpus_path}' resolves to '{resolved}' "
+        f"which is outside the project root and temp directories."
+    )
 
 
 class SimpleRetrieverEngine:
@@ -68,6 +100,9 @@ def build_corpus_index(corpus_path: str, chroma_db_path: str, collection_name: s
     vector_store = ChromaVectorStore(chroma_collection=chroma_collection)
     storage_context = StorageContext.from_defaults(vector_store=vector_store)
 
+    # Validate corpus path to prevent path traversal
+    corpus_path = validate_corpus_path(corpus_path)
+
     # Check if index already built
     if chroma_collection.count() > 0:
         logger.info(f"Loading existing {collection_name} index from ChromaDB ({chroma_collection.count()} chunks)")
@@ -96,7 +131,7 @@ def build_nist_index(nist_json_path: str, chroma_db_path: str):
     Indexes NIST CSF 2.0 JSON into ChromaDB for framework-grounded querying.
     """
     import chromadb
-    from llama_index.core import Document, VectorStoreIndex, StorageContext
+    from llama_index.core import VectorStoreIndex, StorageContext
     from llama_index.vector_stores.chroma import ChromaVectorStore
 
     embed_model = get_embed_model()
@@ -139,7 +174,7 @@ def build_mitre_index(mitre_json_path: str, chroma_db_path: str):
     Only indexes techniques (not all STIX objects) to keep index manageable.
     """
     import chromadb
-    from llama_index.core import Document, VectorStoreIndex, StorageContext
+    from llama_index.core import VectorStoreIndex, StorageContext
     from llama_index.vector_stores.chroma import ChromaVectorStore
 
     embed_model = get_embed_model()
@@ -185,7 +220,6 @@ def _nist_to_documents(nist_data: dict) -> list:
     for func in functions:
         func_id = func.get("id", func.get("Function.Identifier", ""))
         func_name = func.get("name", func.get("Function.Title", ""))
-        func_desc = func.get("description", "")
 
         for cat in func.get("categories", func.get("Category", [])):
             cat_id = cat.get("id", cat.get("Category.Identifier", ""))

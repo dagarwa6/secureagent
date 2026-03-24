@@ -17,7 +17,6 @@ from tools.fair_calculator import (
     get_medbridge_fair_results,
     fair_results_to_dict,
     FAIRInput,
-    FAIRResult,
 )
 
 
