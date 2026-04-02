@@ -313,8 +313,8 @@ if "pipeline_state" in st.session_state and st.session_state.pipeline_state:
 
     # ── Summary Tab ──────────────────────────────────────────────────────────
 
-    tab1, tab2, tab3, tab4, tab5, tab6, tab7 = st.tabs([
-        "📋 Summary", "🎯 Threat Model", "⚠️ Risk Register", "📊 NIST Scores", "🗺️ Roadmap", "📄 Report", "💬 Ask the Report"
+    tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs([
+        "📋 Summary", "🎯 Threat Model", "⚠️ Risk Register", "📊 NIST Scores", "🗺️ Roadmap", "📄 Report"
     ])
 
     with tab1:
@@ -579,60 +579,147 @@ if "pipeline_state" in st.session_state and st.session_state.pipeline_state:
             mime="application/json",
         )
 
-    with tab7:
-        st.markdown("### 💬 Ask the Report")
-        st.markdown("Ask natural-language questions about the security assessment findings.")
+# ── Floating Chatbot Widget ──────────────────────────────────────────────────
+
+# Initialize chat state
+if "chat_open" not in st.session_state:
+    st.session_state.chat_open = False
+if "chat_history" not in st.session_state:
+    st.session_state.chat_history = []
+
+# Floating chat button (always visible when pipeline has run)
+if "pipeline_state" in st.session_state and st.session_state.pipeline_state:
+    # CSS for floating button + chat panel
+    st.markdown("""
+    <style>
+        /* Floating chat toggle button */
+        div[data-testid="stButton"] > button#chat-toggle {
+            position: fixed;
+            bottom: 24px;
+            right: 24px;
+            z-index: 9999;
+            border-radius: 50%;
+            width: 60px;
+            height: 60px;
+            font-size: 28px;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.25);
+        }
+        /* Chat panel container */
+        .chat-panel {
+            position: fixed;
+            bottom: 96px;
+            right: 24px;
+            width: 420px;
+            max-height: 520px;
+            background: white;
+            border: 1px solid #ddd;
+            border-radius: 12px;
+            box-shadow: 0 8px 32px rgba(0,0,0,0.18);
+            z-index: 9998;
+            overflow: hidden;
+        }
+        .chat-panel-header {
+            background: linear-gradient(90deg, #1A3A5C, #C81026);
+            color: white;
+            padding: 12px 16px;
+            font-weight: bold;
+            font-size: 16px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        .chat-panel-body {
+            max-height: 380px;
+            overflow-y: auto;
+            padding: 12px;
+        }
+        .chat-msg-user {
+            background: #e8f0fe;
+            border-radius: 12px 12px 4px 12px;
+            padding: 8px 12px;
+            margin: 6px 0;
+            margin-left: 40px;
+            font-size: 14px;
+        }
+        .chat-msg-assistant {
+            background: #f0f4f8;
+            border-radius: 12px 12px 12px 4px;
+            padding: 8px 12px;
+            margin: 6px 0;
+            margin-right: 40px;
+            font-size: 14px;
+        }
+    </style>
+    """, unsafe_allow_html=True)
+
+    # Toggle button
+    col_spacer, col_btn = st.columns([6, 1])
+    with col_btn:
+        chat_label = "✕" if st.session_state.chat_open else "💬"
+        if st.button(chat_label, key="chat_toggle_btn", help="Ask questions about the report"):
+            st.session_state.chat_open = not st.session_state.chat_open
+            st.rerun()
+
+    # Chat panel (when open)
+    if st.session_state.chat_open:
+        state = st.session_state.pipeline_state
 
         from tools.report_chat import build_report_context, get_chat_response
-
-        # Build context from pipeline state
         report_context = build_report_context(state)
 
-        # Initialize chat history
-        if "chat_history" not in st.session_state:
-            st.session_state.chat_history = []
+        st.markdown("---")
+        st.markdown("""
+        <div class="chat-panel-header" style="border-radius: 12px 12px 0 0; padding: 12px 16px;">
+            🛡️ SecureAgent Assistant
+        </div>
+        """, unsafe_allow_html=True)
 
-        # Clear chat button
-        if st.session_state.chat_history:
-            if st.button("🗑️ Clear Chat", key="clear_chat"):
-                st.session_state.chat_history = []
-                st.rerun()
+        # Chat container
+        chat_container = st.container(height=400)
 
-        # Display chat history
-        for msg in st.session_state.chat_history:
-            with st.chat_message(msg["role"]):
-                st.markdown(msg["content"])
+        with chat_container:
+            # Welcome message if no history
+            if not st.session_state.chat_history:
+                st.markdown(
+                    "**Hi! I'm your SecureAgent Assistant.** Ask me anything about the security assessment — "
+                    "risks, NIST scores, roadmap, costs, or recommendations."
+                )
+                st.markdown("**Try asking:**")
+                suggestions = [
+                    "What are the top 3 critical risks?",
+                    "Explain the NIST Protect score",
+                    "What is the total annual loss exposure?",
+                    "What's in Phase 1 of the roadmap?",
+                    "Which assets are most at risk?",
+                ]
+                for s in suggestions:
+                    st.markdown(f"- *{s}*")
 
-        # Chat input
-        if user_input := st.chat_input("Ask a question about the report..."):
-            # Show user message
-            with st.chat_message("user"):
-                st.markdown(user_input)
+            # Display chat history
+            for msg in st.session_state.chat_history:
+                with st.chat_message(msg["role"]):
+                    st.markdown(msg["content"])
+
+        # Chat input + clear button row
+        input_col, clear_col = st.columns([5, 1])
+        with clear_col:
+            if st.session_state.chat_history:
+                if st.button("🗑️", key="clear_chat", help="Clear chat history"):
+                    st.session_state.chat_history = []
+                    st.rerun()
+
+        # Chat input at the bottom
+        if user_input := st.chat_input("Ask about the report...", key="chat_input"):
             st.session_state.chat_history.append({"role": "user", "content": user_input})
 
-            # Get and show assistant response
-            with st.chat_message("assistant"):
-                with st.spinner("Thinking..."):
-                    answer = get_chat_response(
-                        user_question=user_input,
-                        report_context=report_context,
-                        chat_history=st.session_state.chat_history[:-1],  # exclude current question
-                    )
-                st.markdown(answer)
+            with st.spinner("Thinking..."):
+                answer = get_chat_response(
+                    user_question=user_input,
+                    report_context=report_context,
+                    chat_history=st.session_state.chat_history[:-1],
+                )
             st.session_state.chat_history.append({"role": "assistant", "content": answer})
-
-        # Starter prompts when chat is empty
-        if not st.session_state.chat_history:
-            st.markdown("**Try asking:**")
-            suggestions = [
-                "What are the top 3 critical risks?",
-                "Explain the NIST Protect score and its gaps",
-                "What is the total annual loss exposure?",
-                "What's in Phase 1 of the roadmap?",
-                "Which assets are most at risk?",
-            ]
-            for suggestion in suggestions:
-                st.markdown(f"- *{suggestion}*")
+            st.rerun()
 
 # ── Footer ─────────────────────────────────────────────────────────────────────
 
