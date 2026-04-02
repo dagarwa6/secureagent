@@ -313,8 +313,8 @@ if "pipeline_state" in st.session_state and st.session_state.pipeline_state:
 
     # ── Summary Tab ──────────────────────────────────────────────────────────
 
-    tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs([
-        "📋 Summary", "🎯 Threat Model", "⚠️ Risk Register", "📊 NIST Scores", "🗺️ Roadmap", "📄 Report"
+    tab1, tab2, tab3, tab4, tab5, tab6, tab7 = st.tabs([
+        "📋 Summary", "🎯 Threat Model", "⚠️ Risk Register", "📊 NIST Scores", "🗺️ Roadmap", "📄 Report", "💬 Ask the Report"
     ])
 
     with tab1:
@@ -578,6 +578,61 @@ if "pipeline_state" in st.session_state and st.session_state.pipeline_state:
             file_name="secureagent_results.json",
             mime="application/json",
         )
+
+    with tab7:
+        st.markdown("### 💬 Ask the Report")
+        st.markdown("Ask natural-language questions about the security assessment findings.")
+
+        from tools.report_chat import build_report_context, get_chat_response
+
+        # Build context from pipeline state
+        report_context = build_report_context(state)
+
+        # Initialize chat history
+        if "chat_history" not in st.session_state:
+            st.session_state.chat_history = []
+
+        # Clear chat button
+        if st.session_state.chat_history:
+            if st.button("🗑️ Clear Chat", key="clear_chat"):
+                st.session_state.chat_history = []
+                st.rerun()
+
+        # Display chat history
+        for msg in st.session_state.chat_history:
+            with st.chat_message(msg["role"]):
+                st.markdown(msg["content"])
+
+        # Chat input
+        if user_input := st.chat_input("Ask a question about the report..."):
+            # Show user message
+            with st.chat_message("user"):
+                st.markdown(user_input)
+            st.session_state.chat_history.append({"role": "user", "content": user_input})
+
+            # Get and show assistant response
+            with st.chat_message("assistant"):
+                with st.spinner("Thinking..."):
+                    answer = get_chat_response(
+                        user_question=user_input,
+                        report_context=report_context,
+                        chat_history=st.session_state.chat_history[:-1],  # exclude current question
+                    )
+                st.markdown(answer)
+            st.session_state.chat_history.append({"role": "assistant", "content": answer})
+
+        # Starter prompts when chat is empty
+        if not st.session_state.chat_history:
+            st.markdown("**Try asking:**")
+            suggestions = [
+                "What are the top 3 critical risks?",
+                "Explain the NIST Protect score and its gaps",
+                "What is the total annual loss exposure?",
+                "What's in Phase 1 of the roadmap?",
+                "Which assets are most at risk?",
+            ]
+            for suggestion in suggestions:
+                st.markdown(f"- *{suggestion}*")
 
 # ── Footer ─────────────────────────────────────────────────────────────────────
 
