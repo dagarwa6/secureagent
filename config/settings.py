@@ -86,19 +86,26 @@ def get_llm(with_retry: bool = True):
     Args:
         with_retry: Wrap LLM with auto-retry on 429 rate limits (default True)
     """
+    # Read keys at call time (not import time) so Streamlit secrets
+    # injected into os.environ after module load are picked up.
+    groq_key = os.getenv("GROQ_API_KEY", "")
+    gemini_key = os.getenv("GEMINI_API_KEY", "")
+
     llm = None
-    if GROQ_API_KEY:
+    if groq_key:
         from langchain_groq import ChatGroq
+        logger.info("Using Groq LLM (llama-3.1-70b-versatile)")
         llm = ChatGroq(
             model=GROQ_MODEL,
-            api_key=GROQ_API_KEY,
+            api_key=groq_key,
             temperature=0.1,
         )
-    elif GEMINI_API_KEY:
+    elif gemini_key:
         from langchain_google_genai import ChatGoogleGenerativeAI
+        logger.info("Using Gemini LLM (gemini-2.0-flash)")
         llm = ChatGoogleGenerativeAI(
             model=GEMINI_MODEL,
-            google_api_key=GEMINI_API_KEY,
+            google_api_key=gemini_key,
             temperature=0.1,
         )
     else:
