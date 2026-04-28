@@ -4,7 +4,6 @@ Lets users ask natural-language questions about the generated security assessmen
 Uses context-stuffing: the full pipeline state is serialized into the LLM prompt.
 """
 
-import json
 import logging
 
 from langchain_core.messages import HumanMessage, SystemMessage
