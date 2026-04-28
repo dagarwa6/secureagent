@@ -6,9 +6,13 @@ All LLM providers used here are on free tiers.
 
 import os
 import json
+import time
+import logging
 from dotenv import load_dotenv
 
 load_dotenv()
+
+logger = logging.getLogger(__name__)
 
 # ── LLM Keys (Free Providers) ─────────────────────────────────────────────────
 GROQ_API_KEY: str = os.getenv("GROQ_API_KEY", "")
@@ -29,25 +33,70 @@ NIST_CSF_PATH: str = os.path.join(FRAMEWORK_PATH, "nist_csf_2_0.json")
 MITRE_ATTACK_PATH: str = os.path.join(FRAMEWORK_PATH, "mitre_attack_enterprise.json")
 REPORT_TEMPLATE_PATH: str = os.path.join(BASE_DIR, "templates", "report_template.docx")
 
+# ── Retry config for free-tier rate limits ────────────────────────────────────
+MAX_RETRIES: int = int(os.getenv("LLM_MAX_RETRIES", "3"))
+RETRY_BASE_DELAY: float = float(os.getenv("LLM_RETRY_DELAY", "15"))
 
-def get_llm():
+
+class _RetryLLMWrapper:
+    """Wraps a LangChain LLM and retries on rate-limit (429) errors with exponential backoff."""
+
+    def __init__(self, llm, max_retries: int = MAX_RETRIES, base_delay: float = RETRY_BASE_DELAY):
+        self._llm = llm
+        self._max_retries = max_retries
+        self._base_delay = base_delay
+
+    def __getattr__(self, name):
+        attr = getattr(self._llm, name)
+        if name == "invoke":
+            return self._wrap_invoke(attr)
+        return attr
+
+    def _wrap_invoke(self, original_invoke):
+        def invoke_with_retry(*args, **kwargs):
+            last_err = None
+            for attempt in range(self._max_retries + 1):
+                try:
+                    return original_invoke(*args, **kwargs)
+                except Exception as e:
+                    err_str = str(e).lower()
+                    is_rate_limit = "429" in err_str or "resource_exhausted" in err_str or "rate" in err_str
+                    if is_rate_limit and attempt < self._max_retries:
+                        delay = self._base_delay * (2 ** attempt)
+                        logger.warning(
+                            f"Rate limited (attempt {attempt + 1}/{self._max_retries + 1}). "
+                            f"Waiting {delay:.0f}s before retry..."
+                        )
+                        time.sleep(delay)
+                        last_err = e
+                    else:
+                        raise
+            raise last_err
+        return invoke_with_retry
+
+
+def get_llm(with_retry: bool = True):
     """
     Returns a LangChain LLM client using free providers.
     Priority: Groq → Gemini (both free tier, no credit card required)
 
     Groq signup:   https://console.groq.com  (free: 14,400 req/day)
     Gemini signup: https://aistudio.google.com (free: 15 req/min)
+
+    Args:
+        with_retry: Wrap LLM with auto-retry on 429 rate limits (default True)
     """
+    llm = None
     if GROQ_API_KEY:
         from langchain_groq import ChatGroq
-        return ChatGroq(
+        llm = ChatGroq(
             model=GROQ_MODEL,
             api_key=GROQ_API_KEY,
             temperature=0.1,
         )
     elif GEMINI_API_KEY:
         from langchain_google_genai import ChatGoogleGenerativeAI
-        return ChatGoogleGenerativeAI(
+        llm = ChatGoogleGenerativeAI(
             model=GEMINI_MODEL,
             google_api_key=GEMINI_API_KEY,
             temperature=0.1,
@@ -59,6 +108,10 @@ def get_llm():
             "  Groq:   https://console.groq.com\n"
             "  Gemini: https://aistudio.google.com"
         )
+
+    if with_retry:
+        return _RetryLLMWrapper(llm)
+    return llm
 
 
 def get_org_profile() -> dict:
