@@ -16,7 +16,7 @@ logger = logging.getLogger(__name__)
 
 # ── LLM Keys (Free Providers) ─────────────────────────────────────────────────
 GROQ_API_KEY: str = os.getenv("GROQ_API_KEY", "")
-GROQ_MODEL: str = os.getenv("GROQ_MODEL", "llama-3.1-70b-versatile")
+GROQ_MODEL: str = os.getenv("GROQ_MODEL", "llama-3.3-70b-versatile")
 
 GEMINI_API_KEY: str = os.getenv("GEMINI_API_KEY", "")
 GEMINI_MODEL: str = os.getenv("GEMINI_MODEL", "gemini-2.0-flash")
