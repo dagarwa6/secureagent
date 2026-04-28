@@ -35,12 +35,21 @@ load_dotenv(dotenv_path=project_root / ".env")
 
 # Streamlit Cloud: inject secrets into os.environ so config/settings.py picks them up
 try:
-    if "GEMINI_API_KEY" in st.secrets and not os.environ.get("GEMINI_API_KEY"):
+    _secrets_keys = list(st.secrets.keys()) if hasattr(st.secrets, 'keys') else []
+    logger.info(f"Streamlit secrets available: {_secrets_keys}")
+
+    if "GEMINI_API_KEY" in st.secrets:
         os.environ["GEMINI_API_KEY"] = st.secrets["GEMINI_API_KEY"]
-    if "GROQ_API_KEY" in st.secrets and not os.environ.get("GROQ_API_KEY"):
+        logger.info("Injected GEMINI_API_KEY from Streamlit secrets")
+    if "GROQ_API_KEY" in st.secrets:
         os.environ["GROQ_API_KEY"] = st.secrets["GROQ_API_KEY"]
+        logger.info("Injected GROQ_API_KEY from Streamlit secrets")
 except FileNotFoundError:
     pass  # No secrets file — running locally with .env
+
+# Log which keys are actually available after injection
+logger.info(f"GROQ_API_KEY set: {bool(os.environ.get('GROQ_API_KEY'))}")
+logger.info(f"GEMINI_API_KEY set: {bool(os.environ.get('GEMINI_API_KEY'))}")
 
 # ── Auto-download framework data if missing (needed for Streamlit Cloud) ─────
 _mitre_path = project_root / "data" / "frameworks" / "mitre_attack_enterprise.json"
